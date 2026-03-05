@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Post 1 - Ayoms Blog</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+    <h1>Ayoms Blog</h1>
+    <button onclick="toggleDarkMode()" class="dark-btn">Toggle Dark Mode</button>
+</header>
+
+<main>
+    <article class="single-post">
+        <h2>Why Nigerian Twitter Is Always on Fire 🔥</h2>
+        <p>March 4, 2026</p>
+        <p>Every week there's one trending topic that shakes the whole internet...</p>
+    </article>
+
+    <!-- LOGIN / SIGNUP -->
+    <div class="auth">
+        <h3>Login / Sign Up</h3>
+        <input type="email" id="email" placeholder="Email" />
+        <input type="password" id="password" placeholder="Password" />
+        <button onclick="signup()">Sign Up</button>
+        <button onclick="login()">Login</button>
+    </div>
+
+    <!-- COMMENTS -->
+    <div class="comments">
+        <h3>Comments</h3>
+        <div id="commentsContainer"></div>
+        <input type="text" id="commentInput" placeholder="Write a comment..." />
+        <button onclick="postComment()">Post Comment</button>
+    </div>
+
+</main>
+
+<footer>
+    <p>© 2026 Ayoms Blog | All Rights Reserved</p>
+</footer>
+
+<!-- FIREBASE REAL-TIME COMMENTS + LOGIN + ADMIN -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, updateDoc, doc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+// 🔹 Firebase Config
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+const commentsCol = collection(db, "comments");
+const usersCol = collection(db, "users");
+
+let currentUser=null, currentUserRole="user";
+
+/* SIGNUP & LOGIN */
+window.signup=async function(){
+  const email=document.getElementById("email").value;
+  const password=document.getElementById("password").value;
+  const userCredential=await createUserWithEmailAndPassword(auth,email,password);
+  currentUser=userCredential.user;
+  await addDoc(usersCol,{uid:currentUser.uid,email:currentUser.email,role:"user"});
+  alert("Account created!");
+};
+
+window.login=function(){
+  const email=document.getElementById("email").value;
+  const password=document.getElementById("password").value;
+  signInWithEmailAndPassword(auth,email,password).then(()=>alert("Logged in!")).catch(err=>alert(err.message));
+};
+
+/* TRACK AUTH STATE */
+onAuthStateChanged(auth,async user=>{
+  currentUser=user;
+  if(user) document.querySelector(".auth").style.display="none";
+  else document.querySelector(".auth").style.display="block";
+
+  // check role
+  const snapshot=await getDocs(usersCol);
+  snapshot.forEach(doc=>{
+    const data=doc.data();
+    if(data.uid===currentUser?.uid) currentUserRole=data.role;
+  });
+});
+
+/* POST COMMENT */
+window.postComment=async function(){
+  const input=document.getElementById("commentInput");
+  const text=input.value.trim();
+  if(!text) return alert("Type a comment!");
+  if(!currentUser) return alert("Login first!");
+  await addDoc(commentsCol,{
+    text:text,
+    created:new Date(),
+    user:currentUser.email,
+    likes:0,
+    avatar:`https://ui-avatars.com/api/?name=${currentUser.email.split("@")[0]}&background=random`
+  });
+  input.value="";
+};
+
+/* REAL-TIME DISPLAY + TIMESTAMPS + ADMIN CONTROLS */
+const q=query(commentsCol,orderBy("created"));
+onSnapshot(q,snapshot=>{
+  const container=document.getElementById("commentsContainer");
+  container.innerHTML="";
+  snapshot.forEach(docSnap=>{
+    const data=docSnap.data();
+    const div=document.createElement("div");
+    div.classList.add("comment");
+    const timeAgo=timeSince(data.created.toDate ? data.created.toDate() : new Date(data.created.seconds*1000));
+    div.innerHTML=`
+      <img src="${data.avatar}" class="avatar">
+      <div class="comment-body">
+        <p><strong>${data.user}</strong> • <em>${timeAgo}</em></p>
+        <p>${data.text}</p>
+        <button onclick="likeComment('${docSnap.id}',${data.likes})">❤️ ${data.likes}</button>
+        ${currentUserRole==="admin"?`<button onclick="deleteComment('${docSnap.id}')">🗑️ Delete</button>`:""}
+      </div>
+    `;
+    container.appendChild(div);
+  });
+});
+
+/* LIKE SYSTEM */
+window.likeComment=async function(id,currentLikes){
+  const docRef=doc(db,"comments",id);
+  await updateDoc(docRef,{likes:currentLikes+1});
+};
+
+/* DELETE COMMENT */
+window.deleteComment=async function(id){
+  if(!currentUser || currentUserRole!=="admin") return alert("Admin only!");
+  const docRef=doc(db,"comments",id);
+  await deleteDoc(docRef);
+};
+
+/* HELPER: X MINUTES/HOURS AGO */
+function timeSince(date){
+  const seconds=Math.floor((new Date()-date)/1000);
+  let interval=Math.floor(seconds/31536000);
+  if(interval>1) return interval+" years ago";
+  interval=Math.floor(seconds/2592000);
+  if(interval>1) return interval+" months ago";
+  interval=Math.floor(seconds/86400);
+  if(interval>1) return interval+" days ago";
+  interval=Math.floor(seconds/3600);
+  if(interval>1) return interval+" hours ago";
+  interval=Math.floor(seconds/60);
+  if(interval>1) return interval+" minutes ago";
+  return "just now";
+}
+</script>
+</body>
+</html>
